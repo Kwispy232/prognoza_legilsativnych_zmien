@@ -253,7 +253,10 @@ def main():
     np.random.seed(455)
     
     # Načítanie dát
-    dataset = nacitaj_data("Mastercard_stock_history.csv")
+    import os
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    csv_path = os.path.join(script_dir, "Mastercard_stock_history.csv")
+    dataset = nacitaj_data(csv_path)
     
     # Zobrazenie informácií o dátach
     start_year, end_year = zobraz_info_o_datach(dataset)

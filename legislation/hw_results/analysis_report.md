@@ -1,6 +1,6 @@
 # Analýza časového radu legislatívnych zmien
 
-*Report vygenerovaný: 2025-04-02*
+*Report vygenerovaný: 2025-05-08*
 
 ## 1. Prehľad dát
 

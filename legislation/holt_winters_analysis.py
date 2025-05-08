@@ -19,6 +19,9 @@ from sklearn.metrics import mean_squared_error, mean_absolute_error, mean_absolu
 import os
 from datetime import datetime, timedelta
 
+# Import parameter significance testing module
+from parameter_significance import analyze_parameter_significance
+
 # Nastavenie štýlu grafov
 sns.set_theme(style="whitegrid")
 plt.rcParams['figure.figsize'] = (12, 8)  # Veľkosť grafov
@@ -493,24 +496,99 @@ def final_model_analysis(best_params, full_series, forecast_periods=30):
     print(f"R²: {in_sample_metrics['R²']:.4f}")
     print(f"MASE: {in_sample_metrics['MASE']:.4f}")
     
-    # Generate forecast
+    # Test statistical significance of model parameters
+    print("\nAnalyzing statistical significance of model parameters...")
+    analyze_parameter_significance(full_series, model_params, fit_params, fit)
+    
+    # Generate forecast with prediction intervals
     last_date = full_series.index[-1]
     forecast_dates = pd.date_range(start=last_date + pd.Timedelta(days=1), periods=forecast_periods)
     forecast = fit.forecast(forecast_periods)
     forecast_series = pd.Series(forecast, index=forecast_dates)
     
-    # Create and save forecast visualization
-    plt.figure(figsize=(12, 6))
-    plt.plot(full_series, label='Historical Data')
+    # Calculate prediction intervals using residual standard error
+    residuals = full_series - in_sample_predictions
+    residual_std = np.std(residuals)
+    
+    # Create prediction intervals (80% and 95%)
+    z_80 = 1.28  # 80% confidence interval z-score
+    z_95 = 1.96  # 95% confidence interval z-score
+    
+    lower_80 = forecast_series - z_80 * residual_std
+    upper_80 = forecast_series + z_80 * residual_std
+    lower_95 = forecast_series - z_95 * residual_std
+    upper_95 = forecast_series + z_95 * residual_std
+    
+    # Ensure lower bounds are not negative
+    lower_80 = lower_80.clip(lower=0)
+    lower_95 = lower_95.clip(lower=0)
+    
+    # Create and save forecast visualization with prediction intervals
+    plt.figure(figsize=(14, 8))
+    
+    # Plot historical data and fitted values
+    plt.plot(full_series, label='Historical Data', color='blue')
     plt.plot(in_sample_predictions, color='red', linestyle='--', label='Fitted Values')
+    
+    # Plot forecast with prediction intervals
     plt.plot(forecast_series, color='green', label=f'{forecast_periods}-Day Forecast')
-    plt.title('Holt-Winters Time Series Forecast')
-    plt.xlabel('Date')
-    plt.ylabel('Count')
-    plt.legend()
-    plt.grid(True)
+    
+    # Add shaded areas for prediction intervals
+    plt.fill_between(forecast_dates, lower_95, upper_95, color='lightgreen', alpha=0.3, label='95% Prediction Interval')
+    plt.fill_between(forecast_dates, lower_80, upper_80, color='green', alpha=0.3, label='80% Prediction Interval')
+    
+    # Add lines for mean prediction intervals bounds
+    plt.plot(forecast_dates, lower_95, 'g--', alpha=0.5)
+    plt.plot(forecast_dates, upper_95, 'g--', alpha=0.5)
+    
+    # Add annotations
+    plt.title('Holt-Winters Time Series Forecast with Prediction Intervals', fontsize=14)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.legend(loc='best')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # Add text about model parameters
+    plt.text(0.01, 0.01, 
+             f"Model: Holt-Winters (Trend: {trend}, Seasonal: {seasonal}, Period: {seasonal_periods})", 
+             transform=plt.gca().transAxes, fontsize=10, 
+             bbox=dict(facecolor='white', alpha=0.7))
+    
     plt.tight_layout()
-    plt.savefig(f"{output_dir}/forecast.png")
+    plt.savefig(f"{output_dir}/forecast_with_intervals.png", dpi=300)
+    
+    # Save a zoomed version focusing on the forecast period
+    plt.figure(figsize=(14, 8))
+    
+    # Calculate time range to show - last 30 days of historical data + forecast
+    zoom_start = last_date - pd.Timedelta(days=30)
+    
+    # Plot historical data and fitted values (zoomed)
+    historical_zoom = full_series[full_series.index >= zoom_start]
+    fitted_zoom = in_sample_predictions[in_sample_predictions.index >= zoom_start]
+    
+    plt.plot(historical_zoom, label='Historical Data', color='blue')
+    plt.plot(fitted_zoom, color='red', linestyle='--', label='Fitted Values')
+    
+    # Plot forecast with prediction intervals
+    plt.plot(forecast_series, color='green', label=f'{forecast_periods}-Day Forecast')
+    plt.fill_between(forecast_dates, lower_95, upper_95, color='lightgreen', alpha=0.3, label='95% Prediction Interval')
+    plt.fill_between(forecast_dates, lower_80, upper_80, color='green', alpha=0.3, label='80% Prediction Interval')
+    plt.plot(forecast_dates, lower_95, 'g--', alpha=0.5)
+    plt.plot(forecast_dates, upper_95, 'g--', alpha=0.5)
+    
+    # Add annotations
+    plt.title('Zoomed Holt-Winters Forecast with Prediction Intervals', fontsize=14)
+    plt.xlabel('Date', fontsize=12)
+    plt.ylabel('Count', fontsize=12)
+    plt.legend(loc='best')
+    plt.grid(True, linestyle='--', alpha=0.7)
+    
+    # Add vertical line separating historical data from forecast
+    plt.axvline(x=last_date, color='black', linestyle='--', alpha=0.7, label='Forecast Start')
+    
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/forecast_zoomed_with_intervals.png", dpi=300)
     plt.close()
     
     # Create and save components visualization

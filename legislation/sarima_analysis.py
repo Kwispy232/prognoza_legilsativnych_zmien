@@ -206,7 +206,7 @@ def fit_sarima_model(series, order, seasonal_order):
     Trénovanie SARIMA modelu s danými parametrami
     
     Táto funkcia trénuje SARIMA model na dátach s danými parametrami
-    a vracia natrénovaný model spolu s metrikami výkonu.
+    a vracia natrénovaný model spolu s metrikami výkonu a testami významnosti parametrov.
     
     Parametre:
     ----------
@@ -221,6 +221,7 @@ def fit_sarima_model(series, order, seasonal_order):
     -----------------
     tuple
         (model_fit, diagnostics) - natrénovaný model a slovník diagnostických metrík
+        vrátane významnosti parametrov
     """
     try:
         # Trénovanie modelu
@@ -250,6 +251,33 @@ def fit_sarima_model(series, order, seasonal_order):
         jb_test = stats.jarque_bera(residuals)
         jb_pvalue = jb_test[1]
         
+        # Extrakcia informácií o parametroch modelu priamo z objektu modelu
+        params = model_fit.params
+        conf_int = model_fit.conf_int()
+        p_values = model_fit.pvalues
+        std_errors = model_fit.bse
+        t_values = model_fit.tvalues
+        
+        # Vytvorenie slovníka s významami parametrov
+        param_significance = {
+            'parameters': list(params.index),
+            'coefficients': list(params.values),
+            'std_errors': list(std_errors.values),
+            't_values': list(t_values.values),
+            'p_values': list(p_values.values),
+            'conf_int_lower': list(conf_int.iloc[:, 0].values),
+            'conf_int_upper': list(conf_int.iloc[:, 1].values)
+        }
+        
+        # Hodnotenie významnosti parametrov
+        significant_params = []
+        non_significant_params = []
+        for i, param in enumerate(param_significance['parameters']):
+            if param_significance['p_values'][i] < 0.05:
+                significant_params.append(param)
+            else:
+                non_significant_params.append(param)
+        
         diagnostics = {
             'aic': aic,
             'bic': bic,
@@ -257,7 +285,10 @@ def fit_sarima_model(series, order, seasonal_order):
             'residuals_var': residuals_var,
             'lb_pvalue': lb_pvalue,  # P-hodnota Ljung-Box testu
             'jb_pvalue': jb_pvalue,  # P-hodnota Jarque-Bera testu
-            'residuals': residuals  # pre ďalšiu analýzu
+            'residuals': residuals,  # pre ďalšiu analýzu
+            'param_significance': param_significance,  # informácie o významnosti parametrov
+            'significant_params': significant_params,  # štatisticky významné parametre (p < 0.05)
+            'non_significant_params': non_significant_params  # štatisticky nevýznamné parametre (p >= 0.05)
         }
         
         return model_fit, diagnostics
@@ -385,17 +416,114 @@ def evaluate_model(predictions, actual):
         'MASE': mase
     }
 
-def analyze_residuals(model_fit):
+def visualize_parameter_significance(model_fit, diagnostics):
     """
-    Analýza reziduálov modelu
+    Vizualizácia významnosti parametrov modelu
     
-    Táto funkcia analyzuje a vizualizuje reziduály modelu na overenie 
-    predpokladov o chybách modelu.
+    Táto funkcia vizualizuje štatistickú významnosť parametrov modelu 
+    vrátane koeficientov, p-hodnôt a intervalov spoľahlivosti.
     
     Parametre:
     ----------
     model_fit : statsmodels.SARIMAXResults
         Natrénovaný SARIMA model
+    diagnostics : dict
+        Slovník diagnostických metrík vrátane údajov o významnosti parametrov
+    """
+    print("\n=== Parameter Significance Analysis ===")
+    
+    # Extrakcia údajov o významnosti parametrov
+    param_significance = diagnostics['param_significance']
+    significant_params = diagnostics['significant_params']
+    non_significant_params = diagnostics['non_significant_params']
+    
+    # Výpis významnosti parametrov
+    print("\nStatistically Significant Parameters (p < 0.05):")
+    if significant_params:
+        for param in significant_params:
+            idx = param_significance['parameters'].index(param)
+            coef = param_significance['coefficients'][idx]
+            p_val = param_significance['p_values'][idx]
+            t_val = param_significance['t_values'][idx]
+            print(f"{param:<20}: coef = {coef:.4f}, t = {t_val:.4f}, p-value = {p_val:.4f}")
+    else:
+        print("None")
+    
+    print("\nNon-Significant Parameters (p >= 0.05):")
+    if non_significant_params:
+        for param in non_significant_params:
+            idx = param_significance['parameters'].index(param)
+            coef = param_significance['coefficients'][idx]
+            p_val = param_significance['p_values'][idx]
+            t_val = param_significance['t_values'][idx]
+            print(f"{param:<20}: coef = {coef:.4f}, t = {t_val:.4f}, p-value = {p_val:.4f}")
+    else:
+        print("None")
+    
+    # Vizualizácia koeficientov a ich intervalov spoľahlivosti
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(12, 12))
+    
+    # Koeficienty a intervaly spoľahlivosti
+    params = param_significance['parameters']
+    coefs = param_significance['coefficients']
+    lower_ci = param_significance['conf_int_lower']
+    upper_ci = param_significance['conf_int_upper']
+    p_values = param_significance['p_values']
+    
+    # Farebné rozlíšenie významných a nevýznamných parametrov
+    colors = ['blue' if p < 0.05 else 'red' for p in p_values]
+    
+    # Graf koeficientov s intervalmi spoľahlivosti
+    y_pos = np.arange(len(params))
+    
+    # Vykreslenie každého parametra samostatne s príslušnou farbou
+    for i, (param, coef, p_val) in enumerate(zip(params, coefs, p_values)):
+        color = 'blue' if p_val < 0.05 else 'red'
+        xerr = np.array([[coef - lower_ci[i]], [upper_ci[i] - coef]])
+        ax1.errorbar(coef, y_pos[i], xerr=xerr, fmt='o', capsize=5, color=color, ecolor=color)
+    
+    # Pridanie vertikálnej čiary na nule
+    ax1.axvline(x=0, color='gray', linestyle='--')
+    
+    ax1.set_yticks(y_pos)
+    ax1.set_yticklabels(params)
+    ax1.set_xlabel('Coefficient Value')
+    ax1.set_title('Model Parameters with 95% Confidence Intervals')
+    
+    # Vysvetlivka farieb
+    blue_patch = plt.Rectangle((0, 0), 1, 1, color='blue')
+    red_patch = plt.Rectangle((0, 0), 1, 1, color='red')
+    ax1.legend([blue_patch, red_patch], ['Significant (p < 0.05)', 'Non-significant (p >= 0.05)'])
+    
+    # Graf p-hodnôt
+    ax2.bar(y_pos, p_values, color=colors)
+    ax2.axhline(y=0.05, color='gray', linestyle='--', label='Significance Level (0.05)')
+    ax2.set_xticks(y_pos)
+    ax2.set_xticklabels(params, rotation=45, ha='right')
+    ax2.set_ylabel('p-value')
+    ax2.set_title('Parameter p-values (Lower is More Significant)')
+    ax2.legend()
+    
+    plt.tight_layout()
+    plt.savefig(f"{output_dir}/parameter_significance.png")
+    
+    # Výpis tabuľky s úplným súhrnom parametrov
+    print("\nFull Parameter Summary:")
+    print(model_fit.summary().tables[1])
+
+def analyze_residuals(model_fit, diagnostics=None):
+    """
+    Analýza reziduálov modelu
+    
+    Táto funkcia analyzuje a vizualizuje reziduály modelu na overenie 
+    predpokladov o chybách modelu a významnosť parametrov modelu.
+    
+    Parametre:
+    ----------
+    model_fit : statsmodels.SARIMAXResults
+        Natrénovaný SARIMA model
+    diagnostics : dict, voliteľný
+        Slovník diagnostických metrík vrátane údajov o významnosti parametrov
     """
     print("\n=== Residual Analysis ===")
     
@@ -440,6 +568,10 @@ def analyze_residuals(model_fit):
     print(f"Statistic: {jb_test[0]}")
     print(f"P-value: {jb_test[1]}")
     print(f"Residuals are {'normally distributed' if jb_test[1] > 0.05 else 'not normally distributed'}")
+    
+    # Ak sú k dispozícii diagnostické údaje, analyzujeme aj významnosť parametrov
+    if diagnostics and 'param_significance' in diagnostics:
+        visualize_parameter_significance(model_fit, diagnostics)
 
 def forecast_future(model_fit, steps=30, original_series=None):
     """
@@ -696,8 +828,8 @@ def main():
         plt.tight_layout()
         plt.savefig(f"{output_dir}/test_predictions.png")
         
-        # 6. Analýza reziduálov a diagnostika modelu
-        analyze_residuals(best_model_fit)
+        # 6. Analýza reziduálov a diagnostika modelu vrátane významnosti parametrov
+        analyze_residuals(best_model_fit, diagnostics)
         
         # 7. Trénovanie finálneho modelu na všetkých dátach a predikcia do budúcnosti
         print("\n=== Training Final Model on Full Dataset ===")
