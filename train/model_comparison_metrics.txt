@@ -1,0 +1,32 @@
+# SARIMA vs. GARCH Model Performance Comparison
+
+## Performance Metrics
+
+| Metric | SARIMA | GARCH |
+|--------|--------|-------|
+| MSE | 2.2898 | 2.5050 |
+| RMSE | 1.5132 | 1.5827 |
+| MAE | 0.9718 | 0.9881 |
+| MAPE (%) | 23.4140 | 23.4259 |
+| R² | 0.5633 | 0.5222 |
+
+## Model Summary
+
+### SARIMA Model
+- Model specification: ARIMA(1,1,2)(0,0,1)[7]  
+- AIC: 6541.978 
+- BIC: 6569.403 
+
+### GARCH Model
+- Model specification: GARCH(1,1) with t-distribution
+- Information criteria from GARCH model summary
+
+## Conclusion
+
+The SARIMA model provides a better fit to the historical data based on R² and error metrics.
+
+Both models have strengths:
+- SARIMA captures the seasonal patterns in the legislative data
+- GARCH explicitly models the volatility dynamics present in the residuals
+
+A hybrid approach might be optimal, using SARIMA for point forecasts and GARCH for volatility/uncertainty estimation.
